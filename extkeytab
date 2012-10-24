@@ -1,0 +1,282 @@
+#!/usr/local/bin/perl
+
+###################################################################
+# This command extracts a keytab for transfer. It creates it if
+# it doesn't already exist.
+#
+###################################################################
+
+sub usage {
+    print STDERR <<EOF;
+  usage:   $0 [options] hostname
+
+    options:
+      -quiet              No messages.
+      -verbose            Noisy.
+      -force              Overwrite any existing data. 
+      -test               Don\'t actually perform actions.
+      -delkeys           Delete problem causeing enctypes from KDC
+                         ( des3-cbc-sha1,  arcfour-hmac-md5 )
+	  -service [string]  Create additional keytab entries of the form string/hostname
+	                     in addition to host/hostname.
+
+      -ktab [file]       Write keytab entry into a local file, if 
+                         file is not specified use /tmp/krb5.keytab.hostname
+			 
+
+EOF
+}
+
+sub errmsg {
+    print STDERR "@_\n";
+}
+
+sub msg {
+    print STDERR "@_\n" unless ($quiet);
+}
+
+sub errexit {
+    errmsg @_;
+    usage;
+    exit 1;
+
+}
+
+use Expect;
+
+# Install a key for not pre-existing host.
+
+sub kadmin_install {
+    my ( $host, $service ) = @_;
+
+    my $cmd = "$KADMIN -l -k $mkey add --use-defaults --random-key $service/$host";
+    msg("CMD: $cmd");
+
+    my $process = Expect->spawn($cmd);
+
+    $process->expect($TIMEOUT);
+
+    my $results = $process->before();
+    my $error   = $process->error();
+    msg("RES: $results");
+
+    $process->soft_close();
+}
+
+# Check for existance of principal in DB
+sub kadmin_exists {
+
+    my ( $host, $service ) = @_;
+    my $cmd = "$KADMIN -l -k $mkey list $service/$host";
+    msg("CMD: $cmd");
+    my $process = Expect->spawn($cmd);
+    $process->expect($TIMEOUT);
+    my $results = $process->before();
+
+    msg("RES: $results");
+    $process->soft_close();
+    if ( $results =~ /kadmin\: get $service\/$host\: Principal does not exist/ ) {
+        return "";
+    }
+    else {
+        return $results;
+    }
+}
+
+# Delete principal in DB
+sub kadmin_delete {
+
+    my ( $host, $service ) = @_;
+    my $cmd = "$KADMIN -l -k $mkey del $service/$host";
+    msg("CMD: $cmd");
+    my $process = Expect->spawn($cmd);
+    $process->expect($TIMEOUT);
+    my $results = $process->before();
+
+    my $error = $process->error();
+    msg("RES: $results");
+
+    $process->soft_close();
+    if ($error) {
+        return "";
+    }
+    else {
+        return $results;
+    }
+
+}
+
+# Delete key enctypes in DB
+sub kadmin_cleankey {
+
+    my ( $host, $enctype, $service ) = @_;
+    my $cmd = "$KADMIN -l -k $mkey del_enctype $service/$host $enctype";
+    msg("CMD: $cmd");
+    my $process = Expect->spawn($cmd);
+    $process->expect($TIMEOUT);
+    my $results = $process->before();
+
+    my $error = $process->error();
+    msg("RES: $results");
+
+    $process->soft_close();
+    if ($error) {
+        return "";
+    }
+    else {
+        return $results;
+    }
+
+}
+
+#we want to write the key into /tmp/krb5.keytab.$host
+
+sub keytab_extract {
+    my ( $host, $keytab, $service ) = @_;
+
+    my $cmd = "$KADMIN -l -k $mkey ext_keytab -k $keytab $service/$host";
+    msg("CMD: $cmd");
+
+    my $process = Expect->spawn($cmd);
+
+    $process->expect($TIMEOUT);
+
+    my $results = $process->before();
+    my $error   = $process->error();
+    msg("RES: $results");
+
+    $process->soft_close();
+}
+
+#
+#
+#
+#
+# ------------------------------------------------------------------------
+
+use Getopt::Long;
+
+$quiet    = "yes";      # No messages.
+$verbose  = '';         # Noisy.
+$force    = '';         # Overwrite any existing data.
+$test     = '';         # Don\'t actually perform actions.
+$delkeys  = '';         # Delete problematic enctypes.
+$keytab   = '';         # Write keytab entry into a local file, if
+                        #   file is not specified use /etc/krb5.keytab
+                        #   (The default if no hostname is on the command line).
+@services = qw(host);   # Services to install in keytab
+
+$result = GetOptions(
+    "quiet"     => \$quiet,
+    "force"     => \$force,
+    "verbose"   => \$verbose,
+    "test"      => \$test,
+    "delkeys"   => \$delkeys,
+    "ktab:s"    => \$keytab,
+    "service:s" => \@services
+);
+
+if ( $ARGV[0] ) {
+    $host = $ARGV[0];
+
+    print "Keytab mode @ARGV\n" if ($verbose);
+    $keytab = "/tmp/krb5.keytab.$host" unless ($keytab);
+
+}
+else {
+    errexit("No hostname on command line");
+
+}
+
+# Check for $host in DNS
+$host = lc($host);
+
+use Net::hostent;
+use Socket;
+
+unless ( $h = gethost($host) ) {
+    errexit "$0: no such host: $host\n";
+
+}
+
+if ($verbose) {
+    printf "\n%s is %s%s\n",
+      $host,
+      lc( $h->name ) eq lc($host) ? "" : "*really* ",
+      $h->name;
+}
+
+if ( $h = gethostbyaddr( $h->addr ) ) {
+    if ( lc( $h->name ) ne lc($host) ) {
+        printf "\tThat addr reverses to host %s!\n", $h->name if ($verbose);
+    }
+}
+$host_fqdn = lc( $h->name );
+
+$sdir = "/var/heimdal";
+$mkey = "$sdir/m-key";
+
+# Temp fix until bug in v1.4* is fixed.
+$KADMIN = "/afs/slac.stanford.edu/package/heimdal/1.2/sbin/kadmin";
+
+%BAD_ENCTYPES = (
+    'des3-cbc-sha1'    => 1,
+    'arcfour-hmac-md5' => 1
+);
+
+$TIMEOUT = 5;
+
+# There is a seperate taylor part to set up the files needed
+# by this program.
+# First check access to sdir
+errexit "You are not root.  Run this via sudo.\n" if ( !-w $sdir );
+
+umask(077);
+
+# Check for existance of directory
+$sdir = "$sdir/autokeytab";
+unless ( -d $sdir ) {
+    errexit
+      "Autokeytab area not configured, Run taylor kdcktsetup w/admin token";
+}
+
+# Check for presence of master key
+unless ( -r $mkey ) {
+    errexit "Unable to read master key $mkey";
+}
+
+#
+# Check if host key already exists.
+#
+
+foreach $service (@services) {
+    if ( kadmin_exists( $host_fqdn, $service ) ) {
+        if ($force) {
+            msg "Principal $service/$host_fqdn already exists in KDC";
+
+            # We need to delete in force case
+            errexit "Unable to delete $service/$host_fqdn"
+              unless ( kadmin_delete( $host_fqdn, $service ) );
+            kadmin_install( $host_fqdn, $service );
+        }
+    }
+    else {
+        kadmin_install( $host_fqdn, $service );
+    }
+
+    if ( kadmin_exists($host_fqdn,$service) ) {
+        if ($delkeys) {
+            foreach $enctype ( keys %BAD_ENCTYPES ) {
+                if ( $BAD_ENCTYPES{$enctype} ) {
+                    kadmin_cleankey( $host_fqdn, $enctype, $service );
+                }
+            }
+        }
+        keytab_extract( $host_fqdn, $keytab, $service );
+
+    }
+    else {
+        errexit "Unable to creat priniciple: $service/$host";
+    }
+}
+exit 0;

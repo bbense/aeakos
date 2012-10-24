@@ -1,0 +1,304 @@
+#!/afs/slac.stanford.edu/local/bin/perl
+
+###################################################################
+# This command catches a keytab on stdin, verifies it and then
+# installs it in the /etc/krb5.keytab. It is meant to be run via
+# ssh.
+#
+###################################################################
+
+umask(077);
+
+sub usage {
+    print STDERR <<EOF;
+  usage:   $0 [options] 
+
+    options:
+      -quiet              No messages.
+      -verbose            Noisy.
+      -test               Don\'t actually perform actions.
+	  -confirm		     Check if keytab is valid, don't install.
+      -ktab [file]       keytab file location, if 
+                         file is not specified use /etc/krb5.keytab
+			 
+
+EOF
+}
+
+$TESTING = "";
+
+use Sys::Syslog;    # Older perls barf on this. qw(:standard :macros);
+
+unless ($TESTING) {
+
+    openlog "catchkeytab", "ndelay,pid", LOG_AUTH;
+
+}
+
+# Upgrade this to syslog...
+sub errmsg {
+    if ($TESTING) {
+        print STDERR "@_\n";
+    }
+    else {
+        syslog( LOG_ERR, "@_" );
+    }
+}
+
+sub msg {
+    if ($TESTING) {
+        print STDERR "@_\n" unless ($quiet);
+    }
+    else {
+        syslog( LOG_INFO, "@_" );
+    }
+}
+
+sub errexit {
+    errmsg @_;
+    usage;
+    closelog() unless ($TESTING);
+    exit 1;
+
+}
+
+use Expect;
+
+#Using /tmp for this is just a lot of work for very little gain.
+
+if ( -d "/scswork" ) {
+    $WORK_DIR = "/scswork/keytab";
+}
+else {
+    $WORK_DIR = "/var/spool/keytab";
+}
+
+$CC_CACHE = "$WORK_DIR/keytab_$$";
+
+@KINIT_OPTS = ( "--no-afslog -c $CC_CACHE -k -t ", "-c $CC_CACHE -k -t ", "-k -t " );
+# Find a usable kinit (Make this HASH with exec as keys and options as values)
+%kinit_list =
+  ( '/afs/slac.stanford.edu/package/heimdal/bin/kinit'  => $KINIT_OPTS[0],       
+     '/usr/kerberos/bin/kinit'  => $KINIT_OPTS[1], 
+     '/usr/bin/kinit'  =>  $KINIT_OPTS[2] );
+
+# Note solaris 10 kinit barfs on all options. 
+
+foreach $file ( sort keys %kinit_list) {
+    if ( -x $file ) {
+        $KINIT    = $file;     
+		unshift @KINIT_OPTS, $kinit_list{$file} ; # best guess first
+        last;
+    }
+}
+
+unless ( defined($KINIT) ) {
+    errexit "No usable kinit to verify keytab";
+}
+
+sub verify_keytab {
+    my ( $keytab, $host ) = (@_);
+
+    foreach my $kinit_opt (@KINIT_OPTS) {
+
+        my $cmd = "$KINIT $kinit_opt $keytab host/$host";
+        msg("CMD: $cmd");
+
+        my $process = Expect->spawn($cmd);
+
+        $process->expect($TIMEOUT);
+
+        my $results = $process->before();
+        my $error   = $process->error();
+        msg("RES: $results");
+
+        $process->soft_close();
+
+        unlink($CC_CACHE);
+
+        if ( $process->exitstatus() == 0 ) {
+            return 1;
+        }
+    }
+    return "";
+}
+
+#
+#
+#
+#
+# ------------------------------------------------------------------------
+
+use Getopt::Long;
+
+$quiet   = "yes";    # No messages.
+$verbose = '';       # Noisy.
+$confirm = '';
+
+my $test = '';       # Don\'t actually perform actions.
+
+my $keytab = '/etc/krb5.keytab';
+
+# Write keytab into remote file, if
+#   file is not specified use /etc/krb5.keytab
+$MAX_KEYTAB_SIZE = 32000;    # If it's bigger than this it's likely
+                             # garbage.
+
+$result = GetOptions(
+    "quiet"   => \$quiet,
+    "verbose" => \$verbose,
+    "test"    => \$test,
+    "confirm" => \$confirm,
+    "ktab:s"  => \$keytab
+);
+
+# Slurp STDIN and dump into a temporary file.
+my $done = $MAX_KEYTAB_SIZE;
+my $count;
+my $buffer;
+my $tmpfile; 
+$quiet = "" if ($verbose);
+
+require File::Temp;
+use File::Temp ();
+
+if ( -f $keytab ) {
+    errexit "You are not root.\n" if ( !-w $keytab );
+}
+
+if ( -d $WORK_DIR ) {
+    errexit "Unable to write in $WORK_DIR" if ( !-w $WORK_DIR );
+}
+else {
+    errexit "Unable to create $WORK_DIR" unless ( mkdir $WORK_DIR, 0700 );
+}
+
+unless ($confirm) {
+    $tmpfile = new File::Temp( DIR => $WORK_DIR );
+
+    errmsg("Reading keytab");
+
+    while ( $done > 0 ) {
+        $count = sysread( STDIN, $buffer, $done );
+        unless ( defined($count) ) {
+            errexit("I/O error on STDIN: $!");
+        }
+        if ( $count > 0 ) {
+            if ( defined( syswrite( $tmpfile, $buffer ) ) ) {
+                $done = $done - $count;
+            }
+            else {
+                errexit("I/O error writing $tmpfile->filename: $!");
+            }
+        }
+        else {    # $count == 0   #file closed
+            $done = 0;
+        }
+    }
+
+    if ( $done < 0 ) {
+        errexit("Keytab file too large");
+    }
+
+}
+
+# Find out our FQDN
+# Check for $host in DNS ;
+
+use Net::hostent;
+use Socket;
+use Sys::Hostname;
+
+$host = lc( hostname() );
+
+unless ( $h = gethost($host) ) {
+    errexit "$0: no such host: $host\n";
+
+}
+
+# Fix this to log correctly
+if ($verbose) {
+    printf "\n%s is %s%s\n", $host,
+      lc( $h->name ) eq lc($host) ? "" : "*really* ", $h->name;
+}
+
+if ( $h = gethostbyaddr( $h->addr ) ) {
+    if ( lc( $h->name ) ne lc($host) ) {
+        printf "\tThat addr reverses to host %s!\n", $h->name if ($verbose);
+    }
+}
+
+$host_fqdn = lc( $h->name );
+
+$TIMEOUT = 5;
+
+#
+# Check if host keytab already exists.
+#
+
+if ( -f $keytab ) {
+
+    # Check to see it's valid. kinit?
+    # Only replace if current keytab is not valid.
+    if ( verify_keytab( $keytab, $host_fqdn ) ) {
+        errmsg("Host already has valid keytab");
+        exit 0;
+    }
+}
+
+#evil but if we got this far we don't have a valid keytab.
+exit 1 if ($confirm);
+
+#
+# Validate incoming keytab ( there could be timing issues here. )
+#
+unless ( verify_keytab( $tmpfile->filename, $host_fqdn ) ) {
+    errexit "Invalid keytab: " .  $tmpfile->filename . " : " . $host_fqdn ;
+}
+
+errmsg("Installing new keytab");
+
+#
+# Transfer
+#
+use Fcntl qw(SEEK_SET SEEK_CUR SEEK_END);
+$done = sysseek( $tmpfile, 0, SEEK_CUR );    # How long is file ?
+errexit "Failed to rewind $! " unless ($done);
+errexit "Failed to rewind $!"
+  unless ( sysseek( $tmpfile, 0, SEEK_SET ) );    # Rewind
+
+msg("Rewound tmp : $done bytes");
+
+# Open keytab
+unless ($test) {
+    open( KEYTAB, "+>", $keytab ) || errexit "Can not open $keytab";
+
+    while ( $done > 0 ) {
+        $count = sysread( $tmpfile, $buffer, $done );
+        unless ( defined($count) ) {
+            errexit("I/O error on KEYTAB: $!");
+        }
+        if ( $count > 0 ) {
+            if ( defined( syswrite( KEYTAB, $buffer ) ) ) {
+                $done = $done - $count;
+            }
+            else {
+                errexit("I/O error writing $tmpfile->filename: $!");
+            }
+        }
+        else {    # $count == 0   #file closed
+            $done = 0;
+        }
+    }
+
+    #
+    # Cleanup
+    #
+
+    close(KEYTAB);
+
+}
+
+closelog() unless ($TESTING);
+
+exit 0;

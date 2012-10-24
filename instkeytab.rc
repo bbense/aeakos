@@ -1,0 +1,40 @@
+#!/bin/sh
+#
+# instkeytab:         Starts the keytab installer daemon
+#
+# chkconfig(sun4x): S3 99 K0 70
+# chkconfig: 345 90 05
+#
+# description:  Start keytab installer deamon to do automated keytab installs.
+# processname:  
+
+# Need the commands ps, awk, kill
+PATH=/bin:/usr/bin
+
+%%include rc/functions
+
+xeq=/var/heimdal/autokeytab/instkeytab
+pidf=/var/run/instkeytab.pid
+
+# See how we were called.
+case "$1" in
+    start)
+	startd $xeq $pidf
+	;;	
+
+    stop)
+        # Stop daemons.
+        stopd $xeq $pidf
+        ;;
+    restart)
+        $0 stop
+	sleep 2
+        $0 start
+        RETVAL=$?
+        ;;
+    *)
+        echo "Usage: instkeytab {start|stop|restart}"
+        exit 1
+esac
+
+exit $RETVAL

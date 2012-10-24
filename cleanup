@@ -1,0 +1,80 @@
+#!/usr/local/bin/perl
+#
+
+sub usage { 
+    print STDERR <<EOF;
+  usage:   $0 [options] 
+
+    options:
+      -quiet              No messages.
+      -verbose            Noisy.
+      -test               Don\'t actually perform actions.
+EOF
+}
+
+$TESTING = "" ;
+
+use Sys::Syslog qw(:standard :macros);
+
+unless ( $TESTING ) {
+
+  openlog "$0","ndelay,pid" , LOG_AUTH;
+
+}
+
+
+# Upgrade this to syslog... 
+sub errmsg { 
+  if ( $TESTING ) { 
+    print STDERR "@_\n" ;
+  } else { 
+    syslog(LOG_ERR,"@_"); 
+  }
+}
+
+sub msg { 
+  if ( $TESTING ) { 
+    print STDERR "@_\n" unless( $quiet ) ;
+  } else { 
+    syslog(LOG_INFO,"@_"); 
+  }
+} 
+
+
+sub errexit 
+{ 
+   errmsg @_ ;
+   usage ; 
+   closelog() unless ( $TESTING); 
+   exit 1 ; 
+
+} 
+
+use Getopt::Long;
+
+$quiet   = "yes" ;            # No messages.
+$verbose = '' ;               # Noisy.
+my $test    = '' ;               # Don\'t actually perform actions.
+
+$result = GetOptions ( "quiet" => \$quiet, 
+                       "verbose" => \$verbose, 
+                       "test" => \$test );
+
+if ( $test ) { 
+  $TESTING = 1; 
+}
+$CLEAN = "/var/heimdal/autokeytab/private" ; 
+
+# Open Clean 
+my $then = time() - ( 60*60*24); # one day old
+ 
+opendir(DIR, $CLEAN ) || errexit "can't opendir $CLEAN: $!";
+@oldkeytabs = grep { /^krb5\.keytab\./ && -f "$CLEAN/$_"  && (stat(_))[9] < $then } readdir(DIR);
+closedir DIR;
+
+foreach $file ( @oldkeytabs ) { 
+		print "rm $CLEAN/$file\n" if ( $test || $verbose) ;
+		unlink "$CLEAN/$file" unless ( $test) ; 
+}
+
+exit 0; 
