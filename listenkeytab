@@ -1,4 +1,4 @@
-#!/usr/local/bin/perl
+#!/usr/bin/perl
 
 ###################################################################
 # This script runs from inetd and triggers an external program
@@ -81,8 +81,10 @@ sub freelock {
 #
 # ------------------------------------------------------------------------
 
+# You need to set this for what makes sense on your KDC. 
+$AEAKOSROOT = "/dev/null" ; 
 
-my $sdir = "/var/heimdal/autokeytab/listen" ; 
+my $sdir = "$AEAKOSROOT/autokeytab/listen" ; 
 my $queue = "$sdir/queue" ; 
 
 $LOGGER = '/bin/logger -p auth.error -t listenkeytab' ; # On Solaris... 

@@ -10,10 +10,67 @@
 
 # Need the commands ps, awk, kill
 PATH=/bin:/usr/bin
+# You need to set this. 
+AEAKOSROOT=/dev/null 
 
-%%include rc/functions
 
-xeq=/var/heimdal/autokeytab/instkeytab
+# --- Common functions --- 
+
+pidof() 
+{
+	if [ -n "$2" -a -f "$2" ] ; then
+	    cat $2
+	    return
+	fi
+	/bin/ps -ef | grep "$1" | grep -v grep | awk '{print $2}'	
+}
+
+killproc()             # kill the named process(es)
+{
+	pid=`pidof $1 $2`
+	[ "$pid" != "" ] && kill -KILL $pid
+}
+
+startd()
+{
+	cmd=`echo $1 | cut -f1 -d' ' | sed 's/&//'`
+	[ ! -x $cmd ] && return
+	pid=`pidof $cmd $2`
+	# Return if running.
+	[ -n "$pid" ] && kill -0 $pid 2>/dev/null && return
+	printf "Starting `basename $cmd`..."
+	/bin/sh -c "$1"
+	sleep 1
+	pid=`pidof $1 $2`
+	[ -z "$pid" ] && printf " failed!\n" && return
+	printf "[$pid] ok\n"
+    # Linux Only
+	touch /var/lock/subsys/`basename $cmd`
+
+}
+
+stopd()
+{
+	cmd=`echo $1 | cut -f1 -d' '`
+	[ ! -x $cmd ] && return
+	pid=`pidof $cmd $2`
+	# Return if not running.
+	[ -n "$pid" ] && kill -0 $pid 2>/dev/null || return
+	[ -z "$pid" ] && return
+	printf "Stopping `basename $cmd[$pid]`..."
+	kill $pid || return
+	sleep 1
+	[ -n "$2" ] && rm $2 2>/dev/null
+	printf " ok\n"
+    # Linux only 
+	rm /var/lock/subsys/`basename $cmd`
+
+}
+
+# --- End of common functions ---
+
+
+xeq=$AEAKOSROOT/autokeytab/instkeytab
 pidf=/var/run/instkeytab.pid
 
 # See how we were called.

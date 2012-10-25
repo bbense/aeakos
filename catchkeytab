@@ -1,4 +1,4 @@
-#!/afs/slac.stanford.edu/local/bin/perl
+#!/usr/bin/perl
 
 ###################################################################
 # This command catches a keytab on stdin, verifies it and then
@@ -78,7 +78,7 @@ $CC_CACHE = "$WORK_DIR/keytab_$$";
 @KINIT_OPTS = ( "--no-afslog -c $CC_CACHE -k -t ", "-c $CC_CACHE -k -t ", "-k -t " );
 # Find a usable kinit (Make this HASH with exec as keys and options as values)
 %kinit_list =
-  ( '/afs/slac.stanford.edu/package/heimdal/bin/kinit'  => $KINIT_OPTS[0],       
+  ( '/usr/local/bin/kinit'  => $KINIT_OPTS[0],       
      '/usr/kerberos/bin/kinit'  => $KINIT_OPTS[1], 
      '/usr/bin/kinit'  =>  $KINIT_OPTS[2] );
 

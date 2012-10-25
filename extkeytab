@@ -1,4 +1,4 @@
-#!/usr/local/bin/perl
+#!/usr/bin/perl
 
 ###################################################################
 # This command extracts a keytab for transfer. It creates it if
@@ -213,11 +213,11 @@ if ( $h = gethostbyaddr( $h->addr ) ) {
 }
 $host_fqdn = lc( $h->name );
 
-$sdir = "/var/heimdal";
+$sdir = "$AEAKOSROOT";
 $mkey = "$sdir/m-key";
 
 # Temp fix until bug in v1.4* is fixed.
-$KADMIN = "/afs/slac.stanford.edu/package/heimdal/1.2/sbin/kadmin";
+$KADMIN = "/dev/null"; # This code assumes a Heimdal kadmin. You'll need rejigger it for MIT. 
 
 %BAD_ENCTYPES = (
     'des3-cbc-sha1'    => 1,

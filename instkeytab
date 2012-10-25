@@ -58,14 +58,15 @@ sub errexit
 #
 # ------------------------------------------------------------------------
 
+$AEAKOSROOT = '/dev/null' ; # You need to set this to something that makes sense for your KDC. 
 
-my $sdir = "/var/heimdal/autokeytab" ; 
+my $sdir = "$AEAKOSROOT/autokeytab" ; 
 my $idaho = "$sdir/private" ; #It's a joke son... 
 $queue = "$sdir/listen/queue" ;
-my $taylordir = "/afs/slac/g/scs/systems/system.info" ; 
+
 
 $SSH = "" ; 
-@ssh_list = ( "/opt/openssh/bin/ssh", "/usr/local/bin/ssh" ) ;
+@ssh_list = ( "/usr/bin/ssh", "/usr/local/bin/ssh" ) ;
 $LOGGER = '/bin/logger' ; # On Solaris... 
 # Find a working ssh, if not available punt now. 
 
@@ -274,30 +275,22 @@ if ( $host_fqdn =~ /[^A-Za-z0-9\-\.]/ ) {
   errexit "$ip has funny cars..."  ; #ooo, I've waited a long time to use that error message..
 }
 
+$MY_DOMAIN_REGEXP = qr(foo.com) ; # Set to your domain
 
-unless ( $host_fqdn =~ /\.slac\.stanford\.edu$/ ) { 
-  errexit "$ip not in .slac.stanford.edu" ; 
+unless ( $host_fqdn =~ /$MY_DOMAIN_REGEXP$/ ) { 
+  errexit "$ip not in $MY_DOMAIN_REGEXP" ; 
 }
 
 $hn = (split(/\./,$host_fqdn))[0]; 
 
 $localkeytab = "$idaho/krb5.keytab.$host_fqdn" ; 
 
-# See if host has run taylor
+# Put any extra checks you want to make here. At SLAC we check that the 
+# machine has our system configuration software installed and running. 
+# Until you decide what authorization is sufficient for your site and
+# replace this code, we fail out here. 
 
-$TIMEOUT = 5 ;
-$now = time(); 
-
-unless ( -f "$taylordir/$hn/taylor.lastrun" ) { 
-  errexit "$hn has not run taylor" ; 
-} else {
-  $lastrun = (stat(_))[9] ;	#Evil perl line noise fu.. 
-  # Check for
-  $lastrun  = $now - $lastrun ; 
-  if ( $lastrun > ($TIMEOUT*60*60*24) ) { 
-    errexit "$hn taylor run older than $TIMEOUT days." ; 
-  }
-}
+errexit "Do not accept keytabs from STRANGERS.." ; 
 
 #
 # Check if host keytab already exists. 
@@ -322,7 +315,7 @@ msg("extracting keytab for $host_fqdn" );
 
 # Add extra services here, per host configuration? or just -s nfs for now
 
-system("/var/heimdal/autokeytab/extkeytab -q -s nfs -ktab $localkeytab $host_fqdn < /dev/null" );
+system("$AEAKOSROOT/autokeytab/extkeytab -q -s nfs -ktab $localkeytab $host_fqdn < /dev/null" );
 
 
 #

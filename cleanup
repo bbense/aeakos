@@ -13,6 +13,7 @@ EOF
 }
 
 $TESTING = "" ;
+$AEAKOSROOT = "/dev/null" ; # You have to set this for what makes sense on your KDC. 
 
 use Sys::Syslog qw(:standard :macros);
 
@@ -63,7 +64,7 @@ $result = GetOptions ( "quiet" => \$quiet,
 if ( $test ) { 
   $TESTING = 1; 
 }
-$CLEAN = "/var/heimdal/autokeytab/private" ; 
+$CLEAN = "$AEAKOSROOT/autokeytab/private" ; 
 
 # Open Clean 
 my $then = time() - ( 60*60*24); # one day old
