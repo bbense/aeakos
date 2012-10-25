@@ -1,0 +1,23 @@
+First a warning. 
+
+You need to understand what this software does and how it works. This software is deliberately 
+set up to not work out of the box. You are potentially handing out the keys to all your
+infrastructure. YOU HAVE BEEN WARNED. 
+
+How the software works. 
+
+Client opens a telnet connection to port ktservice on the KDC
+
+Server(listenkeytab) spits back IP address and closes connection. 
+
+Listenkeytab then passes IP address to unix domain socket. 
+
+Instkeytab runs in background and reads ip addrs from unix domain socket.
+It checks them for validity ( resolve to host in domain and any other checks).
+Instkeytab calls extkeytab to extract keytab. Instkeytab then uses a special
+ssh keypair to cat the keytab to root on the client. 
+
+Root on the client has an entry like this in it's authorized hosts file. 
+
+from="your.kdc.host.com",command="/opt/sbin/catchkeytab" ssh-dss <SPECIAL SSH PUBLIC KEY> catchkeytab
+

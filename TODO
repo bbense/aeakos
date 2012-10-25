@@ -1,0 +1,8 @@
+A list of TODO items. 
+
+Flesh out INSTALL document with commands. 
+
+Rewrite extkeytab to use a principal and kadmin so
+server is not required to run on KDC. 
+
+Provide some sample authorization functions. 
