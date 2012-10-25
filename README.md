@@ -9,4 +9,6 @@ provisioning bare metal. In particular the extkeytab program makes many assumpti
 ( heimdal kadmin for one) and will likely need to be reworked for your site. 
 
 The INSTALL document is bare bones at this point. I plan to flesh it out as time
-allows. 
+allows. Here are some slides that might help in understanding the approach used. 
+
+ http://workshop.openafs.org/afsbpw07/talks/bbense.pdf
